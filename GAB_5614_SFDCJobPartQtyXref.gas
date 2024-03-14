@@ -1,0 +1,227 @@
+Program.Sub.Preflight.Start
+Variable.Global.sRptName.Declare(String)
+Variable.Global.sReportID.Declare(String)
+Variable.Global.sEmpNum.Declare(String)
+Variable.Global.sShift.Declare(String)
+Variable.Global.sDept.Declare(String)
+Variable.Global.sGroup.Declare(String)
+Variable.Global.sTime.Declare(String)
+Variable.Global.sDayStart.Declare(String)
+Variable.Global.sRptStartDate.Declare(String)
+Variable.Global.sRptEndDate.Declare(String)
+
+Program.Sub.Preflight.End
+
+Program.Sub.Main.Start
+
+'Program written to execute off of the Shop Floor data collection hook 15710 to change script 2 to read 'Parts Completed'.  The program 
+'retrieves the active employee from the SFDC then looks to build a report of all the jobs 
+'the employee worked on that given day.  This was built to allow an employee to retrieve a report
+'of the total pieces reported on all jobs by and employee for any given day.
+
+	v.Local.sUserID.Declare(string)                           
+	V.Local.sCrystalParm.Declare(string)
+	v.Local.sParmValues.Declare(string)
+	
+	'Here we will set the text on the script 1 button
+	f.Intrinsic.Control.If(v.Caller.Hook,"=",15710)
+		v.Passed.000020.Set("Part/Pieces")
+		f.Intrinsic.control.End
+
+	f.Intrinsic.Control.EndIf
+		
+	'Here we will capture the employee ID number of the active employee
+	v.Local.sUserID.Set(v.Passed.009993)
+	
+	f.Intrinsic.Control.If(v.Local.sUserID,">","")
+	'continue and check the jobs_in_process_g table for all the jobs an employee is working on
+	f.Intrinsic.Control.Else
+		'if no active employee is selected we will send a message, we cannot process
+		f.Intrinsic.UI.Msgbox("Selection only works with an active employee")
+		f.Intrinsic.Control.End
+
+	f.Intrinsic.Control.EndIf
+	
+	v.Global.sEmpNum.Set(v.Local.sUserID)
+	v.Global.lDay.Declare(long)
+
+	Function.Odbc.Connection!Conx.Openconnection(Variable.Ambient.pDSN,Variable.Ambient.PUser,Variable.Ambient.PPass)
+
+	f.Intrinsic.Control.CallSub(formatdate)
+	F.Intrinsic.Control.CallSub(getrptid)
+	F.Intrinsic.Control.CallSub(getshiftdepartment)
+	F.Intrinsic.Control.CallSub(getShiftSched)
+
+	F.Intrinsic.String.Split("employee*!*jobsdate*!*jobedate","*!*",V.Local.sCrystalParm)
+	F.Intrinsic.String.Concat(V.Local.sUserID,"*!*",v.Global.srptenddate,"*!*",v.Global.srptstartdate,V.Local.sParmValues)
+	F.Intrinsic.String.Split(V.local.sparmValues,"*!*",V.Local.sparmValues)
+		
+	Function.Global.BI.PrintReport(v.Global.sReportID,0,V.Local.sCrystalParm,v.Local.sParmValues,False)
+	
+	f.Intrinsic.Control.End
+
+			
+
+Program.Sub.Main.End
+
+Program.Sub.getrptid.Start
+
+V.Local.iRptID.Declare(Long,0)
+V.Local.sPath.Declare(String)
+V.Local.bExists.Declare(Boolean)
+
+V.Local.sTemp.Declare(String)
+
+V.Local.sRptName.Declare(String)
+V.Local.sRptName.Set("GAB_5614_Job_Part_Pieces.rpt")
+
+F.Global.BI.GetIDFromName(V.Local.sRptName.Trim,V.Local.iRptID)
+F.Intrinsic.Control.If(V.Local.iRptID,=,-1)
+		F.Intrinsic.String.Concat(V.Caller.BusintDir,"\Custom\",V.Local.sRptName.Trim,V.Local.sPath)
+		F.Intrinsic.File.Exists(V.Local.sPath,V.Local.bExists)
+		F.Intrinsic.Control.If(V.Local.bExists,=,False)
+			F.Intrinsic.String.Concat("Please setup ",V.Local.sRptName,". Report in Custom Reports Maintenance",V.Local.sTemp)
+			F.Intrinsic.UI.Msgbox(V.Local.sTemp)
+			F.Intrinsic.Control.ExitSub
+		F.Intrinsic.Control.EndIf
+		F.Global.BI.InitializeReport(V.Local.sRptName.Trim,V.Local.sPath,V.Local.iRptID)
+		F.Intrinsic.Variable.AddRV("iRptID",V.Local.iRptID)
+		F.Intrinsic.Control.If(V.Local.iRptID,=,-1)
+			F.Intrinsic.String.Concat("Please setup ",V.Local.sRptName,". Report in Custom Reports Maintenance",V.Local.sTemp)
+			F.Intrinsic.UI.Msgbox(V.Local.sTemp)
+			F.Intrinsic.Control.ExitSub
+		F.Intrinsic.Control.EndIf
+	F.Intrinsic.Control.Else
+		F.Intrinsic.Variable.AddRV("iRptID",V.Local.iRptID)
+F.Intrinsic.Control.EndIf
+
+v.Global.sReportID.Set(v.Local.iRptID)
+
+Program.Sub.getrptid.End
+
+Program.Sub.getShiftDepartment.Start
+
+v.Local.sSqlShiftDept.Declare(string)
+
+v.Local.sSqlShiftDept.Set("select shift, dept_employee, pr_balance_group from employee_mstr where employee = '{0}'")
+f.Intrinsic.String.Build(v.Local.sSqlShiftDept,v.Global.sEmpNum,v.Local.sSqlShiftDept)
+
+F.ODBC.Connection!conX.OpenRecordsetRO("rstEmployee",V.local.sSqlShiftDept)
+				F.Intrinsic.Control.If(V.Odbc.ConX!rstEmployee.EOF,=,True)
+					F.odbc.conx!rstEmployee.close
+				F.Intrinsic.Control.Else
+					v.Global.sShift.set(V.ODBC.ConX!rstEmployee.fieldval!shift)
+					v.Global.sDept.set(V.ODBC.ConX!rstEmployee.fieldval!dept_employee)
+					v.Global.sGroup.set(V.ODBC.ConX!rstEmployee.fieldval!pr_balance_group)
+					F.odbc.conx!rstEmployee.close
+				F.Intrinsic.Control.EndIf
+
+
+Program.Sub.getShiftDepartment.End
+
+Program.Sub.getShiftSched.Start
+
+v.Local.sSqlShiftSched.Declare(string)
+
+v.Local.sSqlShiftSched.Set("select start_sun, start_mon, start_tue, start_wed, start_thr, start_fri, start_sat from lunch_shift where shift = '{0}' and dept = '{1}' and shift_group = '{2}'")
+f.Intrinsic.String.Build(v.Local.sSqlShiftSched,V.Global.sShift,V.Global.sDept,V.Global.sGroup,v.Local.sSqlShiftSched)
+
+F.ODBC.Connection!conX.OpenRecordsetRO("rstShift",V.local.sSqlShiftSched)
+		F.Intrinsic.Control.If(V.Odbc.ConX!rstShift.EOF,=,True)
+			F.odbc.conx!rstShift.close
+		F.Intrinsic.Control.Else
+			f.Intrinsic.control.selectcase(v.Global.lDay)
+				f.Intrinsic.Control.Case(1)
+					v.Global.stime.set(V.ODBC.ConX!rstShift.fieldval!start_sun)
+				f.Intrinsic.Control.Case(2)
+					v.Global.stime.set(V.ODBC.ConX!rstShift.fieldval!start_mon)
+				f.Intrinsic.Control.Case(3)
+					v.Global.stime.set(V.ODBC.ConX!rstShift.fieldval!start_tue)
+				f.Intrinsic.Control.Case(4)
+					v.Global.stime.set(V.ODBC.ConX!rstShift.fieldval!start_wed)
+				f.Intrinsic.Control.Case(5)
+					v.Global.stime.set(V.ODBC.ConX!rstShift.fieldval!start_thr)
+				f.Intrinsic.Control.Case(6)
+					v.Global.stime.set(V.ODBC.ConX!rstShift.fieldval!start_fri)
+				f.Intrinsic.Control.Case(7)
+					v.Global.stime.set(V.ODBC.ConX!rstShift.fieldval!start_sat)
+			Function.Intrinsic.Control.EndSelect
+			F.odbc.conx!rstShift.close
+		F.Intrinsic.Control.EndIf
+		
+		v.Local.sSqlShiftSched.Set("")
+
+Program.Sub.getShiftSched.End
+
+Program.Sub.formatDate.Start
+V.Local.sdate.Declare(string)
+V.Local.s0date.Declare(string)
+V.Local.iLen.Declare(long)
+V.Local.dbyte2.Declare(string)
+V.Local.yyyy.Declare(string)
+V.Local.mm.Declare(string)
+V.Local.dd.Declare(string)
+
+V.Local.sdate.Set(V.ambient.Date)
+f.Intrinsic.String.Left(v.Local.sdate,10,v.Local.sdate)
+f.Intrinsic.String.Trim(v.Local.sdate,v.Local.sdate)
+F.Intrinsic.String.Len(V.Local.sdate,V.Local.iLen)
+F.Intrinsic.String.Mid(V.Local.sdate,2,1,V.Local.dbyte2)
+F.Intrinsic.String.Right(V.Local.sdate,4,V.Local.yyyy)
+F.Intrinsic.Control.If(V.Local.iLen,"=",10)
+	F.Intrinsic.String.Left(V.Local.sdate,2,V.Local.mm)
+	F.Intrinsic.String.Mid(V.Local.sdate,4,2,V.Local.dd)
+	F.Intrinsic.String.Concat(V.Local.mm,V.Local.dd,V.Local.yyyy,V.Local.sdate)
+	F.Intrinsic.String.Concat(V.Local.mm,V.Local.dd,V.Local.yyyy,V.Local.s0date)
+F.Intrinsic.Control.elseif(V.Local.iLen,"=",9)
+	F.Intrinsic.Control.If(V.Local.dbyte2,"=","/")
+		F.Intrinsic.String.Left(V.Local.sdate,1,V.Local.mm)
+		F.Intrinsic.String.Mid(V.Local.sdate,3,2,V.Local.dd)
+		F.Intrinsic.String.Concat("0",V.Local.mm,"/",V.Local.dd,"/",V.Local.yyyy,V.Local.sdate)
+		F.Intrinsic.String.Concat(V.Local.mm,"/",V.Local.dd,"/",V.Local.yyyy,V.Local.s0date)
+	F.Intrinsic.Control.Else
+		F.Intrinsic.String.Left(V.Local.sdate,2,V.Local.mm)
+		F.Intrinsic.String.Mid(V.Local.sdate,4,1,V.Local.dd)
+		F.Intrinsic.String.Concat(V.Local.mm,"/0",V.Local.dd,"/",V.Local.yyyy,V.Local.sdate)
+		F.Intrinsic.String.Concat(V.Local.mm,V.Local.dd,"/",V.Local.yyyy,V.Local.s0date)
+	F.Intrinsic.Control.EndIf
+F.Intrinsic.Control.Else
+		F.Intrinsic.String.Left(V.Local.sdate,1,V.Local.mm)
+	F.Intrinsic.Control.Else
+		F.Intrinsic.String.Mid(V.Local.sdate,1,V.Local.dd)
+		F.Intrinsic.String.Concat("0",V.Local.mm,"/0",V.Local.dd,"/",V.Local.yyyy,V.Local.sdate)
+		F.Intrinsic.String.Concat(V.Local.mm,V.Local.dd,"/",V.Local.yyyy,V.Local.s0date)
+F.Intrinsic.Control.EndIf
+
+v.Global.sRptEndDate.Set(v.Local.sdate)
+f.Intrinsic.Control.If(v.Global.sShift,"=","1")	
+	Function.Intrinsic.Date.Dateadd(D, -1, v.Global.sRptEndDate, v.Global.sRptStartDate)
+f.Intrinsic.Control.Else
+	v.Global.sRptStartDate.Set(v.Global.sRptEndDate)
+f.Intrinsic.Control.EndIf
+
+Function.Intrinsic.Date.Weekday (v.Local.sdate,v.Global.lday)
+
+f.Intrinsic.control.selectcase(v.Global.lDay)
+	f.Intrinsic.Control.Case(1)
+		 v.global.sDayStart.set("START_SUN")
+	f.Intrinsic.Control.Case(2)
+		 v.global.sDayStart.set("START_MON")
+	f.Intrinsic.Control.Case(3)
+		 v.global.sDayStart.set("START_TUE")
+	f.Intrinsic.Control.Case(4)
+		 v.global.sDayStart.set("START_WED")
+	f.Intrinsic.Control.Case(5)
+		 v.global.sDayStart.set("START_THR")
+	f.Intrinsic.Control.Case(6)
+		 v.global.sDayStart.set("START_FRI")
+	f.Intrinsic.Control.Case(7)
+		 v.global.sDayStart.set("START_SAT")
+Function.Intrinsic.Control.EndSelect
+
+
+Program.Sub.formatDate.End
+
+Program.Sub.Comments.Start
+${$0$}$GuiJobPartXREF$}$SUPERVSR$}$6/25/2019 2:53:08 PM$}$False
+Program.Sub.Comments.End
